@@ -30,13 +30,15 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
           yield simpleRepository.create(s"row $i")
 
         Future.sequence(insertResults).flatMap{_ =>
-          Logger.info(s"\t\t\tNo errors. See what we have in the table")
+          println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
           simpleRepository.findAll
         }
 
       }.recoverWith {
         case e: PSQLException =>
-          Logger.error(s"\t\t\tCatch the SQl exception and see what we have in the table", e)
+          println(s"${Thread.currentThread().getName} \t\t\tCatch the SQl exception (exception: ${e.getMessage}) and wait a bit")
+          Thread.sleep(500)
+          println(s"${Thread.currentThread().getName} \t\t\tSee what we have in the table after the exception")
           database.withConnectionFuture { implicit connection =>
             simpleRepository.findAll
           }

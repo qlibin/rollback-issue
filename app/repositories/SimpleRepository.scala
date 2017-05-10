@@ -20,21 +20,27 @@ class SimpleRepository {
     val thread = Thread.currentThread().getName
     val simpleNumber = counter.incrementAndGet()
 
-    Logger.debug(s"\t\tTry to insert `$text`")
+    println(s" $thread\t${System.nanoTime()} \t\tTry to insert `$text` (connection: $connection)")
 
     if (simpleNumber % 33 == 0) {
 
-        Logger.debug(s"\t\t\tGenerate an SQL exception for `$text`")
+      println(s" $thread\t${System.nanoTime()} \t\t\tGenerate an SQL exception for `$text` (connection: $connection)")
 
-        generateSqlException(text)
+      generateSqlException(text)
 
     } else {
 
-      val res = insert(text, thread)
+      try {
+        val res = insert(text, thread)
 
-      Logger.debug(s"\t\t\t\tInsert `$text` DONE")
+        println(s" $thread\t${System.nanoTime()} \t\t\t\tInserted `$text` (connection: $connection)")
 
-      res
+        res
+      } catch {
+        case e: Throwable =>
+          println(s" $thread\t${System.nanoTime()} \t\t\t\tException for `$text` (connection: $connection) (exception: ${e.getMessage})")
+          throw e
+      }
 
     }
   }
