@@ -78,3 +78,54 @@ Sometimes the response is empty. This means that issue did not reveal itself. In
             "text": "row 55, connection: HikariProxyConnection@2145720414 wrapping org.postgresql.jdbc.PgConnection@778a6e85"
         }
     ]
+
+
+# Workaround
+
+ConnectionWithThread fixes the issue. 
+
+Basically for each connection it creates an execution context with one thread so that the tread will be used for every sql query on the connection.
+
+*Example:*
+
+If I run 5 requests in parallel:
+    
+    $ curl http://localhost:9000/test & curl http://localhost:9000/test & curl http://localhost:9000/test & curl http://localhost:9000/test & curl http://localhost:9000/test
+    [1] 48227
+    [2] 48228
+    [3] 48229
+    [4] 48230
+    [][][][][][1]   Done                    curl http://localhost:9000/test
+    [2]   Done                    curl http://localhost:9000/test
+    [3]-  Done                    curl http://localhost:9000/test
+    [4]+  Done                    curl http://localhost:9000/test
+
+Then in the result we have 5 times empty list `[][][][][]` (which means rollback was successful)
+
+And I can see in logs that each different thread uses single JDBC connection:
+
+    ...    
+     application-akka.actor.default-dispatcher-3	904157417015707 				Inserted `row 26` (connection: HikariProxyConnection@1989603 wrapping org.postgresql.jdbc.PgConnection@5206a6db)
+     application-akka.actor.default-dispatcher-3	904157417071694 		Try to insert `row 27` (connection: HikariProxyConnection@1989603 wrapping org.postgresql.jdbc.PgConnection@5206a6db)
+     application-akka.actor.default-dispatcher-3	904157417513913 				Inserted `row 27` (connection: HikariProxyConnection@1989603 wrapping org.postgresql.jdbc.PgConnection@5206a6db)
+     application-akka.actor.default-dispatcher-3	904157417568543 		Try to insert `row 28` (connection: HikariProxyConnection@1989603 wrapping org.postgresql.jdbc.PgConnection@5206a6db)
+    ...
+     application-akka.actor.default-dispatcher-7	904157482010635 				Inserted `row 22` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-7	904157482035576 		Try to insert `row 23` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-6	904157482063374 				Inserted `row 27` (connection: HikariProxyConnection@1576295265 wrapping org.postgresql.jdbc.PgConnection@34370385)
+     application-akka.actor.default-dispatcher-6	904157482083309 		Try to insert `row 28` (connection: HikariProxyConnection@1576295265 wrapping org.postgresql.jdbc.PgConnection@34370385)
+    ...
+     application-akka.actor.default-dispatcher-9	904157483369490 				Inserted `row 17` (connection: HikariProxyConnection@464785022 wrapping org.postgresql.jdbc.PgConnection@1f8b9957)
+     application-akka.actor.default-dispatcher-9	904157483384171 		Try to insert `row 18` (connection: HikariProxyConnection@464785022 wrapping org.postgresql.jdbc.PgConnection@1f8b9957)
+     application-akka.actor.default-dispatcher-7	904157483655109 				Inserted `row 27` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-7	904157483685909 		Try to insert `row 28` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+    ...
+     application-akka.actor.default-dispatcher-7	904157487894131 				Inserted `row 37` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-7	904157487914611 		Try to insert `row 38` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-9	904157487976180 				Inserted `row 27` (connection: HikariProxyConnection@464785022 wrapping org.postgresql.jdbc.PgConnection@1f8b9957)
+     application-akka.actor.default-dispatcher-9	904157487995453 		Try to insert `row 28` (connection: HikariProxyConnection@464785022 wrapping org.postgresql.jdbc.PgConnection@1f8b9957)
+    ...
+     application-akka.actor.default-dispatcher-9	904157488562153 		Try to insert `row 30` (connection: HikariProxyConnection@464785022 wrapping org.postgresql.jdbc.PgConnection@1f8b9957)
+     application-akka.actor.default-dispatcher-7	904157488507038 		Try to insert `row 40` (connection: HikariProxyConnection@719380029 wrapping org.postgresql.jdbc.PgConnection@2edf4f3e)
+     application-akka.actor.default-dispatcher-6	904157488574506 		Try to insert `row 45` (connection: HikariProxyConnection@1576295265 wrapping org.postgresql.jdbc.PgConnection@34370385)
+     application-akka.actor.default-dispatcher-10	904157488561300 		Try to insert `row 28` (connection: HikariProxyConnection@575039675 wrapping org.postgresql.jdbc.PgConnection@2679f8ac)

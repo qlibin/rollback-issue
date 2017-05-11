@@ -5,17 +5,15 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Singleton
 
 import anorm._
-import play.api.Logger
-import play.api.libs.concurrent.Execution.Implicits._
 
-import scala.concurrent.Future
+import scala.concurrent.{ExecutionContext, Future}
 
 @Singleton
 class SimpleRepository {
 
   val counter: AtomicInteger = new AtomicInteger(0)
 
-  def create(text: String)(implicit connection: Connection): Future[Int] = Future {
+  def create(text: String)(implicit connection: Connection, ec: ExecutionContext): Future[Int] = Future {
 
     val thread = Thread.currentThread().getName
     val simpleNumber = counter.incrementAndGet()
@@ -68,14 +66,14 @@ class SimpleRepository {
 
   private val rowParser = Macro.namedParser[Row]
 
-  def findAll(implicit connection: Connection): Future[Seq[Row]] = Future {
+  def findAll(implicit connection: Connection, ec: ExecutionContext): Future[Seq[Row]] = Future {
     SQL"""
          SELECT * FROM test_table ORDER BY created
       """.as(rowParser.*)
   }
 
   def cleanup()
-            (implicit connection: Connection): Future[Boolean] = Future {
+            (implicit connection: Connection, ec: ExecutionContext): Future[Boolean] = Future {
     SQL"""
        CREATE TABLE IF NOT EXISTS test_table (
          id                     SERIAL       PRIMARY KEY NOT NULL,

@@ -2,14 +2,14 @@ package controllers
 
 import javax.inject._
 
+import common.ConnectionWithThread._
 import common.DatabaseHelper._
 import org.postgresql.util.PSQLException
-import play.api.Logger
 import play.api.db.DBApi
+import play.api.libs.concurrent.Execution.defaultContext
+import play.api.libs.json.Json
 import play.api.mvc._
 import repositories.{Row, SimpleRepository}
-import play.api.libs.concurrent.Execution.Implicits._
-import play.api.libs.json.Json
 
 import scala.concurrent.Future
 
@@ -20,11 +20,11 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
 
   def test = Action.async {
 
-    database.withConnectionFuture { implicit connection =>
+    database.withConnectionFuture { implicit connectionWithThread =>
       simpleRepository.cleanup()
     }.flatMap { _ =>
 
-      val eventualRows: Future[Seq[Row]] = database.withTransactionFuture { implicit connection =>
+      val eventualRows: Future[Seq[Row]] = database.withTransactionFuture { implicit connectionWithThread =>
 
         val insertResults = for {i <- 1 to 500}
           yield simpleRepository.create(s"row $i")
@@ -39,14 +39,14 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
           println(s"${Thread.currentThread().getName} \t\t\tCatch the SQl exception (exception: ${e.getMessage}) and wait a bit")
           Thread.sleep(500)
           println(s"${Thread.currentThread().getName} \t\t\tSee what we have in the table after the exception")
-          database.withConnectionFuture { implicit connection =>
+          database.withConnectionFuture { implicit connectionWithThread =>
             simpleRepository.findAll
           }
-      }
+      }(defaultContext)
 
       eventualRows
 
-    }.map { rows => Ok(Json.toJson(rows)) }
+    }(defaultContext).map { rows => Ok(Json.toJson(rows)) }(defaultContext)
 
   }
 }

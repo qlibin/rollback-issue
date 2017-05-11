@@ -1,12 +1,10 @@
 package common
 
-import java.sql.Connection
-
-import play.api.Logger
 import play.api.db.Database
 
-import scala.concurrent.{ExecutionContext, Future}
+import scala.concurrent.Future
 import scala.util.control.ControlThrowable
+import common.ConnectionWithThread._
 
 
 object DatabaseHelper {
@@ -17,14 +15,15 @@ object DatabaseHelper {
     */
   implicit class DatabaseAware(database: Database) {
 
-    def withConnectionFuture[A](block: Connection => Future[A])(implicit ec: ExecutionContext): Future[A] = {
+    def withConnectionFuture[A](block: ConnectionWithThread => Future[A]): Future[A] = {
       withConnectionFuture(autocommit = true)(block)
     }
 
-    def withConnectionFuture[A](autocommit: Boolean = true)(block: Connection => Future[A])(implicit ec: ExecutionContext): Future[A] = {
+    def withConnectionFuture[A](autocommit: Boolean = true)(block: ConnectionWithThread => Future[A]): Future[A] = {
       val connection = database.getConnection(autocommit)
+      implicit val connectionWithThread = ConnectionWithThread(connection)
 
-      val resultFuture = block(connection)
+      val resultFuture = block(connectionWithThread)
 
       resultFuture.map { result =>
         println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Close connection normally (connection: $connection)")
@@ -40,25 +39,25 @@ object DatabaseHelper {
       }
     }
 
-    def withTransactionFuture[A](block: Connection => Future[A])(implicit ec: ExecutionContext): Future[A] = {
-      withConnectionFuture(autocommit = false) { implicit connection =>
-        val resultFuture = block(connection)
+    def withTransactionFuture[A](block: ConnectionWithThread => Future[A]): Future[A] = {
+      withConnectionFuture(autocommit = false) { implicit connectionWithThread =>
+        val resultFuture = block(connectionWithThread)
 
         resultFuture.transform(result => {
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction normally (connection: $connection)")
-          connection.commit()
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction normally (connection: $connection)")
+          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction normally (connection: ${connectionWithThread.connection})")
+          connectionWithThread.connection.commit()
+          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction normally (connection: ${connectionWithThread.connection})")
           result
         }, {
           case e: ControlThrowable =>
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction after ControlThrowable (connection: $connection)")
-            connection.commit()
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction after ControlThrowable (connection: $connection)")
+            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction after ControlThrowable (connection: ${connectionWithThread.connection})")
+            connectionWithThread.connection.commit()
+            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction after ControlThrowable (connection: ${connectionWithThread.connection})")
             e
           case e: Throwable =>
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Rollback after an SQL exception (connection: $connection)")
-            connection.rollback()
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Rollback after an SQL exception (connection: $connection)")
+            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Rollback after an SQL exception (connection: ${connectionWithThread.connection})")
+            connectionWithThread.connection.rollback()
+            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Rollback after an SQL exception (connection: ${connectionWithThread.connection})")
             e
         })
       }
