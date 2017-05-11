@@ -12,12 +12,18 @@ import repositories.{Row, SimpleRepository}
 
 import scala.collection.immutable.IndexedSeq
 import scala.concurrent.Future
-import scala.util.{Failure, Try}
+import scala.util.{Failure, Success, Try}
 
 @Singleton
 class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository) extends Controller {
 
   private val database = dbApi.database("default")
+
+  private def lift[T](futures: Seq[Future[T]]) =
+    futures.map(_.map { Success(_) }.recover { case t => Failure(t) })
+
+  def waitAll[T](futures: Seq[Future[T]]) =
+    Future.sequence(lift(futures)) // having neutralized exception completions through the lifting, .sequence can now be used
 
   def test = Action.async {
 
@@ -27,10 +33,10 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
 
       val eventualRows: Future[Seq[Row]] = database.withTransactionFuture { implicit connection =>
 
-        val insertResults: IndexedSeq[Future[Try[Int]]] =
+        val insertResults: IndexedSeq[Future[Int]] =
           for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
 
-        Future.sequence(insertResults).flatMap{ (results: IndexedSeq[Try[Int]]) =>
+        waitAll(insertResults).flatMap{ (results: Seq[Try[Int]]) =>
           val error: Option[Try[Int]] = results.find(_.isFailure)
           error match {
             case Some(Failure(e)) => throw e

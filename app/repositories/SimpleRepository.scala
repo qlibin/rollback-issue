@@ -5,44 +5,43 @@ import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Singleton
 
 import anorm._
+import play.api.Logger
 import play.api.libs.concurrent.Execution.Implicits._
 
 import scala.concurrent.Future
-import scala.util.Try
 
 @Singleton
 class SimpleRepository {
 
   val counter: AtomicInteger = new AtomicInteger(0)
 
-  def create(text: String)(implicit connection: Connection): Future[Try[Int]] = Future {
-    Try {
-      val thread = Thread.currentThread().getName
-      val simpleNumber = counter.incrementAndGet()
+  def create(text: String)(implicit connection: Connection): Future[Int] = Future {
 
-      println(s" $thread\t${System.nanoTime()} \t\tTry to insert `$text` (connection: $connection)")
+    val thread = Thread.currentThread().getName
+    val simpleNumber = counter.incrementAndGet()
 
-      if (simpleNumber % 33 == 0) {
+    println(s" $thread\t${System.nanoTime()} \t\tTry to insert `$text` (connection: $connection)")
 
-        println(s" $thread\t${System.nanoTime()} \t\t\tGenerate an SQL exception for `$text` (connection: $connection)")
+    if (simpleNumber % 33 == 0) {
 
-        generateSqlException(text)
+      println(s" $thread\t${System.nanoTime()} \t\t\tGenerate an SQL exception for `$text` (connection: $connection)")
 
-      } else {
+      generateSqlException(text)
 
-        try {
-          val res = insert(text, thread)
+    } else {
 
-          println(s" $thread\t${System.nanoTime()} \t\t\t\tInserted `$text` (connection: $connection)")
+      try {
+        val res = insert(text, thread)
 
-          res
-        } catch {
-          case e: Throwable =>
-            println(s" $thread\t${System.nanoTime()} \t\t\t\tException for `$text` (connection: $connection) (exception: ${e.getMessage})")
-            throw e
-        }
+        println(s" $thread\t${System.nanoTime()} \t\t\t\tInserted `$text` (connection: $connection)")
 
+        res
+      } catch {
+        case e: Throwable =>
+          println(s" $thread\t${System.nanoTime()} \t\t\t\tException for `$text` (connection: $connection) (exception: ${e.getMessage})")
+          throw e
       }
+
     }
   }
 
