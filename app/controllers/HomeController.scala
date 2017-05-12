@@ -20,7 +20,7 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
   private val database = dbApi.database("default")
 
   private def lift[T](futures: Seq[Future[T]]) =
-    futures.map(_.map { Success(_) }.recover { case t => Failure(t) })
+    futures.map(_.map { Success(_) }.recover { case t => Failure(t) }) // wrap all futures' results with Try
 
   def waitAll[T](futures: Seq[Future[T]]) =
     Future.sequence(lift(futures)) // having neutralized exception completions through the lifting, .sequence can now be used
@@ -37,10 +37,10 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
           for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
 
         waitAll(insertResults).flatMap{ (results: Seq[Try[Int]]) =>
-          val error: Option[Try[Int]] = results.find(_.isFailure)
+          val error: Option[Try[Int]] = results.find(_.isFailure) // find first exception
           error match {
-            case Some(Failure(e)) => throw e
-            case _ =>
+            case Some(Failure(e)) => throw e // throw it so that DatabaseHelper could rollback the transaction
+            case _ => // do something on success
               println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
               simpleRepository.findAll
           }
