@@ -3,7 +3,8 @@ package controllers
 import javax.inject._
 
 import common.DatabaseHelper._
-import org.postgresql.util.PSQLException
+import common.FutureHelper
+import common.FutureHelper._
 import play.api.db.DBApi
 import play.api.libs.concurrent.Execution.Implicits._
 import play.api.libs.json.Json
@@ -12,29 +13,11 @@ import repositories.{Row, SimpleRepository}
 
 import scala.collection.immutable.IndexedSeq
 import scala.concurrent.Future
-import scala.util.{Failure, Success, Try}
 
 @Singleton
 class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository) extends Controller {
 
   private val database = dbApi.database("default")
-
-  private def lift[T](futures: Seq[Future[T]]) =
-    futures.map(_.map { Success(_) }.recover { case t => Failure(t) }) // wrap all futures' results with Try
-
-  def liftedSequence[T](futures: Seq[Future[T]]): Future[Seq[Try[T]]] =
-    Future.sequence(lift(futures)) // having neutralized exception completions through the lifting, .sequence can now be used
-
-  case class LiftedExceptions(msg: String, exceptions: Seq[Throwable]) extends Exception(msg)
-
-  def ensureToComplete[T](futures: Seq[Future[T]]): Future[Seq[T]] =
-    liftedSequence(futures).map { (results: Seq[Try[T]]) =>
-      results.partition(_.isFailure) match {
-        case (exceptions, successResults) if exceptions.isEmpty => successResults.map(_.get)
-        case (exceptions, _) =>
-          throw LiftedExceptions("Failed futures from sequence", exceptions.map(_.asInstanceOf[Failure[T]].exception))
-      }
-    }
 
   def test = Action.async {
 
@@ -47,7 +30,7 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
         val insertResults: IndexedSeq[Future[Int]] =
           for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
 
-        ensureToComplete(insertResults).flatMap{ _ =>
+        FutureHelper.ensureToComplete(insertResults).flatMap{ _ =>
           println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
           simpleRepository.findAll
         }
