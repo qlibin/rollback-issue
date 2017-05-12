@@ -3,16 +3,16 @@ package controllers
 import javax.inject._
 
 import common.DatabaseHelper._
-import org.postgresql.util.PSQLException
 import play.api.db.DBApi
 import play.api.libs.concurrent.Execution.Implicits._
 import play.api.libs.json.Json
 import play.api.mvc._
-import repositories.{Row, SimpleRepository}
+import repositories.SimpleRepository
 
-import scala.collection.immutable.IndexedSeq
-import scala.concurrent.Future
-import scala.util.{Failure, Success, Try}
+import scala.concurrent.duration._
+import scala.concurrent.{Await, Future}
+import scala.util.{Failure, Success}
+
 
 @Singleton
 class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository) extends Controller {
@@ -27,35 +27,18 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
 
   def test = Action.async {
 
+    val connection = database.getConnection(autocommit = false)
+    println(s"\n\n\nSimple rollback test BEGIN")
+    Await.ready(simpleRepository.create(s"row 1")(connection), 20 seconds)
+    Await.ready(simpleRepository.create(s"row 2")(connection), 20 seconds)
+//    connection.rollback() // in HikariProxyConnection this thing resets dirty state of connection
+    Await.ready(simpleRepository.create(s"row 3 after rollback")(connection), 20 seconds)
+    connection.close() // in HikariProxyConnection this does rollback if connection in dirty state
+    // this means if we call rollback before that HikariProxyConnection will not rollback during close
+    println(s"\n\n\nSimple rollback test END")
+
     database.withConnectionFuture { implicit connection =>
-      simpleRepository.cleanup()
-    }.flatMap { _ =>
-
-      val eventualRows: Future[Seq[Row]] = database.withTransactionFuture { implicit connection =>
-
-        val insertResults: IndexedSeq[Future[Int]] =
-          for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
-
-        waitAll(insertResults).flatMap{ (results: Seq[Try[Int]]) =>
-          val error: Option[Try[Int]] = results.find(_.isFailure)
-          error match {
-            case Some(Failure(e)) => throw e
-            case _ =>
-              println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
-              simpleRepository.findAll
-          }
-        }
-
-      }.recoverWith {
-        case e: PSQLException =>
-          println(s"${Thread.currentThread().getName} \t\t\tCatch the SQl exception (exception: ${e.getMessage}) and see what we have in the table after the exception")
-          database.withConnectionFuture { implicit connectionWithThread =>
-            simpleRepository.findAll
-          }
-      }
-
-      eventualRows
-
+      simpleRepository.findAll
     }.map { rows => Ok(Json.toJson(rows)) }
 
   }
