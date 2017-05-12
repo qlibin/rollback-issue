@@ -22,8 +22,19 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
   private def lift[T](futures: Seq[Future[T]]) =
     futures.map(_.map { Success(_) }.recover { case t => Failure(t) }) // wrap all futures' results with Try
 
-  def waitAll[T](futures: Seq[Future[T]]) =
+  def liftedSequence[T](futures: Seq[Future[T]]): Future[Seq[Try[T]]] =
     Future.sequence(lift(futures)) // having neutralized exception completions through the lifting, .sequence can now be used
+
+  case class LiftedExceptions(msg: String, exceptions: Seq[Throwable]) extends Exception(msg)
+
+  def ensureToComplete[T](futures: Seq[Future[T]]): Future[Seq[T]] =
+    liftedSequence(futures).map { (results: Seq[Try[T]]) =>
+      results.partition(_.isFailure) match {
+        case (exceptions, successResults) if exceptions.isEmpty => successResults.map(_.get)
+        case (exceptions, _) =>
+          throw LiftedExceptions("Failed futures from sequence", exceptions.map(_.asInstanceOf[Failure[T]].exception))
+      }
+    }
 
   def test = Action.async {
 
@@ -36,18 +47,13 @@ class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository)
         val insertResults: IndexedSeq[Future[Int]] =
           for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
 
-        waitAll(insertResults).flatMap{ (results: Seq[Try[Int]]) =>
-          val error: Option[Try[Int]] = results.find(_.isFailure) // find first exception
-          error match {
-            case Some(Failure(e)) => throw e // throw it so that DatabaseHelper could rollback the transaction
-            case _ => // do something on success
-              println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
-              simpleRepository.findAll
-          }
+        ensureToComplete(insertResults).flatMap{ _ =>
+          println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
+          simpleRepository.findAll
         }
 
       }.recoverWith {
-        case e: PSQLException =>
+        case e: LiftedExceptions =>
           println(s"${Thread.currentThread().getName} \t\t\tCatch the SQl exception (exception: ${e.getMessage}) and see what we have in the table after the exception")
           database.withConnectionFuture { implicit connectionWithThread =>
             simpleRepository.findAll
