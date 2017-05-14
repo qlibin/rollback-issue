@@ -24,6 +24,8 @@ libraryDependencies += "org.scalatestplus.play" %% "scalatestplus-play" % "2.0.0
 libraryDependencies += "org.mockito" % "mockito-all" % "1.10.19" % Test
 libraryDependencies += "com.opentable.components" % "otj-pg-embedded" % "0.7.1" % Test
 
+libraryDependencies += "com.storm-enroute" %% "scalameter-core" % "0.6"
+
 // Show full stacktraces when tests fail. Makes debugging more easy...
 testOptions in Test += Tests.Argument("-oF")
 

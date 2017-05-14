@@ -2,50 +2,58 @@ package controllers
 
 import javax.inject._
 
-import common.DatabaseHelper._
-import common.FutureHelper
-import common.FutureHelper._
-import play.api.db.DBApi
-import play.api.libs.concurrent.Execution.Implicits._
+import org.scalameter.{Key, Warmer, _}
 import play.api.libs.json.Json
 import play.api.mvc._
-import repositories.{Row, SimpleRepository}
+import services.SimpleService
 
-import scala.collection.immutable.IndexedSeq
-import scala.concurrent.Future
+import scala.concurrent.Await
+import scala.concurrent.duration._
 
 @Singleton
-class HomeController @Inject()(dbApi: DBApi, simpleRepository: SimpleRepository) extends Controller {
+class HomeController @Inject()(simpleService: SimpleService) extends Controller {
 
-  private val database = dbApi.database("default")
+  val standardConfig = config(
+    Key.exec.minWarmupRuns -> 15,
+    Key.exec.maxWarmupRuns -> 20,
+    Key.exec.benchRuns -> 30,
+    Key.verbose -> true
+  ) withWarmer new Warmer.Default
 
-  def test = Action.async {
+  def benchmark = Action {
 
-    database.withConnectionFuture { implicit connection =>
-      simpleRepository.cleanup()
-    }.flatMap { _ =>
+    simpleService.cleanup()
+    Thread.sleep(1500)
 
-      val eventualRows: Future[Seq[Row]] = database.withTransactionFuture { implicit connection =>
+    val asyncExecTime = standardConfig measure {
+      Await.result(simpleService.doAsyncOperations(), 20 seconds)
+    }
 
-        val insertResults: IndexedSeq[Future[Int]] =
-          for {i <- 1 to 500} yield simpleRepository.create(s"row $i")
+    simpleService.cleanup()
+    Thread.sleep(1500)
 
-        FutureHelper.ensureToComplete(insertResults).flatMap{ _ =>
-          println(s"${Thread.currentThread().getName} \t\t\tNo errors. See what we have in the table")
-          simpleRepository.findAll
-        }
+    val syncExecTime = standardConfig measure {
+      Await.result(simpleService.doSyncOperations(), 20 seconds)
+    }
 
-      }.recoverWith {
-        case e: LiftedExceptions =>
-          println(s"${Thread.currentThread().getName} \t\t\tCatch the SQl exception (exception: ${e.getMessage}) and see what we have in the table after the exception")
-          database.withConnectionFuture { implicit connectionWithThread =>
-            simpleRepository.findAll
-          }
-      }
+    simpleService.cleanup()
+    Thread.sleep(1500)
 
-      eventualRows
+    val seqExecTime = standardConfig measure {
+      simpleService.doSequentialOperations()
+    }
 
-    }.map { rows => Ok(Json.toJson(rows)) }
+    val syncSpeedup = asyncExecTime/syncExecTime
+    val seqSpeedup = asyncExecTime/seqExecTime
+
+    Ok(Json.obj(
+      "asyncExecTime" -> asyncExecTime.toString(),
+      "syncExecTime" -> syncExecTime.toString(),
+      "seqExecTime" -> seqExecTime.toString(),
+      "sync-speedup" -> syncSpeedup,
+      "seq-speedup" -> seqSpeedup
+    ))
 
   }
+
 }

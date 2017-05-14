@@ -27,15 +27,15 @@ object DatabaseHelper {
       val resultFuture = block(connection)
 
       resultFuture.map { result =>
-        println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Close connection normally (connection: $connection)")
+        debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Close connection normally (connection: $connection)")
         connection.close()
-        println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Close connection normally (connection: $connection)")
+        debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Close connection normally (connection: $connection)")
         result
       }.recoverWith {
         case e: Throwable =>
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Close connection after exception (connection: $connection)")
+          debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Close connection after exception (connection: $connection)")
           connection.close()
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Close connection after exception (connection: $connection)")
+          debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Close connection after exception (connection: $connection)")
           Future.failed(e)
       }
     }
@@ -45,24 +45,28 @@ object DatabaseHelper {
         val resultFuture = block(connection)
 
         resultFuture.transform(result => {
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction normally (connection: $connection)")
+          debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction normally (connection: $connection)")
           connection.commit()
-          println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction normally (connection: $connection)")
+          debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction normally (connection: $connection)")
           result
         }, {
           case e: ControlThrowable =>
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction after ControlThrowable (connection: $connection)")
+            debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Commit transaction after ControlThrowable (connection: $connection)")
             connection.commit()
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction after ControlThrowable (connection: $connection)")
+            debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Commit transaction after ControlThrowable (connection: $connection)")
             e
           case e: Throwable =>
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Rollback after an SQL exception (connection: $connection)")
+            debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tStart: Rollback after an SQL exception (connection: $connection)")
             connection.rollback()
-            println(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Rollback after an SQL exception (connection: $connection)")
+            debug(s" ${Thread.currentThread().getName}\t${System.nanoTime()} \tDONE: Rollback after an SQL exception (connection: $connection)")
             e
         })
       }
     }
+  }
+
+  private def debug(msg: String) = {
+//    println(msg)
   }
 
 }
